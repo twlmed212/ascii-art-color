@@ -1,13 +1,15 @@
 package ascii
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	_ "image/color"
 	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
-	// "image/color"
 )
 
 var (
@@ -16,6 +18,12 @@ var (
 	ColorFlag  string
 	Letter     string
 )
+
+type ColorApiResponse struct {
+	RGB struct {
+		Value string `json:"value"`
+	} `json:"rgb"`
+}
 
 func CheckNonePrintable(s string) bool {
 	for _, rn := range s {
@@ -26,11 +34,59 @@ func CheckNonePrintable(s string) bool {
 	return true
 }
 
+func getColorApi(typ string, code string) (color string) {
+	fmt.Println(typ, code)
+	url := "https://www.thecolorapi.com/id?" + typ + "=" + code
+	resp, _ := http.Get(url)
+	defer resp.Body.Close()
+	var result ColorApiResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	RgbPattern := regexp.MustCompile(`[rgb]*\(*(\d+)[,|;]* *(\d+)[,|;] *(\d+)\)*`)
+	color = RgbPattern.ReplaceAllString(result.RGB.Value, "${1};${2};${3}")
+	return
+}
+
+func checkColorType(checkedColor string) (string, bool) {
+	HexPattern := regexp.MustCompile(`^#*(\w{6})$`)
+	checkHex := HexPattern.FindAllString(checkedColor, -1)
+	if checkHex != nil {
+		fmt.Println("in hex", checkHex)
+		checkHex[0] = HexPattern.ReplaceAllString(checkHex[0], "$1")
+		// here Call function to convert HEX to RGB
+		return getColorApi("hex", checkHex[0]), true
+	}
+	HslPattern := regexp.MustCompile(`hsl*a*\((\d+, \d+%, \d+%)(, \d+)*\)`)
+	checkHsl := HslPattern.FindAllString(checkedColor, -1)
+	if checkHsl != nil {
+		fmt.Println("in hsl==>", checkHsl[0])
+		checkHex[0] = HexPattern.ReplaceAllString(checkHsl[0], "$1")
+		// here Call function to convert Hsl to RGB
+		return getColorApi("hsl", checkHsl[0]), true
+	}
+	RgbPattern := regexp.MustCompile(`[rgb]*\(*(\d+[,|;]* *\d+[,|;] *\d+)\)*`)
+	checkRGB := RgbPattern.FindAllString(checkedColor, -1)
+	if checkRGB != nil {
+		/// We need to replace (,) with (;) before return the color
+		RgbPattern := regexp.MustCompile(`[rgb]*\(*(\d+)[,|;]* *(\d+)[,|;] *(\d+)\)*`)
+		checkRGB[0] = RgbPattern.ReplaceAllString(checkRGB[0], "${1};${2};${3}")
+		fmt.Println("in RGB", len(checkRGB[0]), checkRGB[0])
+		return checkRGB[0], true
+	}
+	fmt.Println("==>", checkRGB)
+	return "", false
+}
+
 func PrintX(s string, tabl2D [][]string, toByte *[]byte) {
 	colorName, checkColor := getColor(ColorFlag)
+	// 240;141;2
+	fmt.Println(colorName)
 	if !checkColor && ColorFlag != "" {
-		fmt.Println("❌ Error: color not Found!!")
+		colorName, checkColor = checkColorType(ColorFlag)
+		if !checkColor {
+			fmt.Println("❌ Error: color not Found!!", colorName, checkColor)
+		}
 	}
+
 	index := getIndex(s)
 	for i := 0; i < 8; i++ {
 		for j := 0; j < len(s); j++ {
@@ -135,11 +191,7 @@ func ReadFile(args []string) (string, []string) {
 func GetFlags() (string, []string) {
 	flag.Usage = func() {
 		// Color Error
-		if OutputFlag == "" {
-			fmt.Println("Usage: go run . [OPTION] [STRING] [BANNER]\nEX: go run . --output=<fileName.txt> something standard")
-		} else {
-			fmt.Println("Usage: go run . [OPTION] [STRING]\nEX: go run . --color=<color> <letters to be colored> \"something\"")
-		}
+		fmt.Println("Usage: go run . [OPTION] [STRING]\nEX: go run . --color=<color> <letters to be colored> \"something\"")
 		// Output Error
 		os.Exit(0)
 	}

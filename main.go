@@ -12,8 +12,6 @@ import (
 	myFunc "ascii/ascii"
 )
 
-
-
 func main() {
 	// Setup the flag, and check if it's correct or not,
 	// and get the arguments as well
