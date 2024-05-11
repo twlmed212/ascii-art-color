@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	_ "image/color"
 	"io"
 	"net/http"
 	"os"
@@ -25,6 +24,22 @@ type ColorApiResponse struct {
 	} `json:"rgb"`
 }
 
+func getColorApi(typ string, code string) (color string, isValid bool) {
+	url := "https://www.thecolorapi.com/id?" + typ + "=" + code
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Println("Sorry Mate, Color Not Found :)")
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	var result ColorApiResponse
+	json.NewDecoder(resp.Body).Decode(&result)
+	RgbPattern := regexp.MustCompile(`[rgb]*\(*(\d+)[,|;]* *(\d+)[,|;] *(\d+)\)*`)
+	color = RgbPattern.ReplaceAllString(result.RGB.Value, "${1};${2};${3}")
+	isValid = RgbPattern.Match([]byte(result.RGB.Value))
+	return
+}
+
 func CheckNonePrintable(s string) bool {
 	for _, rn := range s {
 		if !(rn >= 32 && rn <= 127) {
@@ -34,34 +49,20 @@ func CheckNonePrintable(s string) bool {
 	return true
 }
 
-func getColorApi(typ string, code string) (color string) {
-	fmt.Println(typ, code)
-	url := "https://www.thecolorapi.com/id?" + typ + "=" + code
-	resp, _ := http.Get(url)
-	defer resp.Body.Close()
-	var result ColorApiResponse
-	json.NewDecoder(resp.Body).Decode(&result)
-	RgbPattern := regexp.MustCompile(`[rgb]*\(*(\d+)[,|;]* *(\d+)[,|;] *(\d+)\)*`)
-	color = RgbPattern.ReplaceAllString(result.RGB.Value, "${1};${2};${3}")
-	return
-}
-
-func checkColorType(checkedColor string) (string, bool) {
+func checkColorType(checkedColor string) (res string, isValid bool) {
 	HexPattern := regexp.MustCompile(`^#*(\w{6})$`)
 	checkHex := HexPattern.FindAllString(checkedColor, -1)
 	if checkHex != nil {
-		fmt.Println("in hex", checkHex)
 		checkHex[0] = HexPattern.ReplaceAllString(checkHex[0], "$1")
 		// here Call function to convert HEX to RGB
-		return getColorApi("hex", checkHex[0]), true
+		return getColorApi("hex", checkHex[0])
 	}
-	HslPattern := regexp.MustCompile(`hsl*a*\((\d+, \d+%, \d+%)(, \d+)*\)`)
+	HslPattern := regexp.MustCompile(`[hsl]*\((\d+,) *(\d+%,) *(\d+%)\)`)
 	checkHsl := HslPattern.FindAllString(checkedColor, -1)
 	if checkHsl != nil {
-		fmt.Println("in hsl==>", checkHsl[0])
-		checkHex[0] = HexPattern.ReplaceAllString(checkHsl[0], "$1")
+		checkHsl[0] = HslPattern.ReplaceAllString(checkHsl[0], "${1}${2}${3}")
 		// here Call function to convert Hsl to RGB
-		return getColorApi("hsl", checkHsl[0]), true
+		return getColorApi("hsl", checkHsl[0])
 	}
 	RgbPattern := regexp.MustCompile(`[rgb]*\(*(\d+[,|;]* *\d+[,|;] *\d+)\)*`)
 	checkRGB := RgbPattern.FindAllString(checkedColor, -1)
@@ -69,21 +70,17 @@ func checkColorType(checkedColor string) (string, bool) {
 		/// We need to replace (,) with (;) before return the color
 		RgbPattern := regexp.MustCompile(`[rgb]*\(*(\d+)[,|;]* *(\d+)[,|;] *(\d+)\)*`)
 		checkRGB[0] = RgbPattern.ReplaceAllString(checkRGB[0], "${1};${2};${3}")
-		fmt.Println("in RGB", len(checkRGB[0]), checkRGB[0])
 		return checkRGB[0], true
 	}
-	fmt.Println("==>", checkRGB)
 	return "", false
 }
 
 func PrintX(s string, tabl2D [][]string, toByte *[]byte) {
 	colorName, checkColor := getColor(ColorFlag)
-	// 240;141;2
-	fmt.Println(colorName)
 	if !checkColor && ColorFlag != "" {
 		colorName, checkColor = checkColorType(ColorFlag)
 		if !checkColor {
-			fmt.Println("❌ Error: color not Found!!", colorName, checkColor)
+			fmt.Println("❌ Error: color not Found!!")
 		}
 	}
 
